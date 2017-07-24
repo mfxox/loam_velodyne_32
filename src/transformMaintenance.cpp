@@ -1,28 +1,50 @@
-#include <math.h>
-#include <time.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <ros/ros.h>
+// Copyright 2013, Ji Zhang, Carnegie Mellon University
+// Further contributions copyright (c) 2016, Southwest Research Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+//    this list of conditions and the following disclaimer.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from this
+//    software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// This is an implementation of the algorithm described in the following paper:
+//   J. Zhang and S. Singh. LOAM: Lidar Odometry and Mapping in Real-time.
+//     Robotics: Science and Systems Conference (RSS). Berkeley, CA, July 2014.
 
+#include <cmath>
+
+#include <loam_velodyne/common.h>
 #include <nav_msgs/Odometry.h>
-#include <sensor_msgs/Imu.h>
-#include <sensor_msgs/PointCloud2.h>
-
-#include <tf/transform_datatypes.h>
-#include <tf/transform_broadcaster.h>
-
 #include <opencv/cv.h>
-#include <opencv2/highgui/highgui.hpp>
-
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
-
-const double PI = 3.1415926;
-const double rad2deg = 180 / PI;
-const double deg2rad = PI / 180;
+#include <ros/ros.h>
+#include <sensor_msgs/Imu.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <tf/transform_datatypes.h>
+#include <tf/transform_broadcaster.h>
 
 float transformSum[6] = {0};
 float transformIncre[6] = {0};
@@ -72,40 +94,40 @@ void transformAssociateToMap()
   float salz = sin(transformAftMapped[2]);
   float calz = cos(transformAftMapped[2]);
 
-  float srx = -sbcx*(salx*sblx + calx*caly*cblx*cbly + calx*cblx*saly*sbly) 
-            - cbcx*cbcz*(calx*saly*(cbly*sblz - cblz*sblx*sbly) 
-            - calx*caly*(sbly*sblz + cbly*cblz*sblx) + cblx*cblz*salx) 
-            - cbcx*sbcz*(calx*caly*(cblz*sbly - cbly*sblx*sblz) 
-            - calx*saly*(cbly*cblz + sblx*sbly*sblz) + cblx*salx*sblz);
+  float srx = -sbcx*(salx*sblx + calx*cblx*salz*sblz + calx*calz*cblx*cblz)
+            - cbcx*sbcy*(calx*calz*(cbly*sblz - cblz*sblx*sbly)
+            - calx*salz*(cbly*cblz + sblx*sbly*sblz) + cblx*salx*sbly)
+            - cbcx*cbcy*(calx*salz*(cblz*sbly - cbly*sblx*sblz) 
+            - calx*calz*(sbly*sblz + cbly*cblz*sblx) + cblx*cbly*salx);
   transformMapped[0] = -asin(srx);
 
-  float srycrx = (cbcy*sbcz - cbcz*sbcx*sbcy)*(calx*saly*(cbly*sblz - cblz*sblx*sbly) 
-               - calx*caly*(sbly*sblz + cbly*cblz*sblx) + cblx*cblz*salx) 
-               - (cbcy*cbcz + sbcx*sbcy*sbcz)*(calx*caly*(cblz*sbly - cbly*sblx*sblz) 
-               - calx*saly*(cbly*cblz + sblx*sbly*sblz) + cblx*salx*sblz) 
-               + cbcx*sbcy*(salx*sblx + calx*caly*cblx*cbly + calx*cblx*saly*sbly);
-  float crycrx = (cbcz*sbcy - cbcy*sbcx*sbcz)*(calx*caly*(cblz*sbly - cbly*sblx*sblz) 
-               - calx*saly*(cbly*cblz + sblx*sbly*sblz) + cblx*salx*sblz) 
-               - (sbcy*sbcz + cbcy*cbcz*sbcx)*(calx*saly*(cbly*sblz - cblz*sblx*sbly) 
-               - calx*caly*(sbly*sblz + cbly*cblz*sblx) + cblx*cblz*salx) 
-               + cbcx*cbcy*(salx*sblx + calx*caly*cblx*cbly + calx*cblx*saly*sbly);
-  transformMapped[1] = atan2(srycrx / cos(transformMapped[0]), crycrx / cos(transformMapped[0]));
+  float srycrx = sbcx*(cblx*cblz*(caly*salz - calz*salx*saly)
+               - cblx*sblz*(caly*calz + salx*saly*salz) + calx*saly*sblx)
+               - cbcx*cbcy*((caly*calz + salx*saly*salz)*(cblz*sbly - cbly*sblx*sblz)
+               + (caly*salz - calz*salx*saly)*(sbly*sblz + cbly*cblz*sblx) - calx*cblx*cbly*saly)
+               + cbcx*sbcy*((caly*calz + salx*saly*salz)*(cbly*cblz + sblx*sbly*sblz)
+               + (caly*salz - calz*salx*saly)*(cbly*sblz - cblz*sblx*sbly) + calx*cblx*saly*sbly);
+  float crycrx = sbcx*(cblx*sblz*(calz*saly - caly*salx*salz)
+               - cblx*cblz*(saly*salz + caly*calz*salx) + calx*caly*sblx)
+               + cbcx*cbcy*((saly*salz + caly*calz*salx)*(sbly*sblz + cbly*cblz*sblx)
+               + (calz*saly - caly*salx*salz)*(cblz*sbly - cbly*sblx*sblz) + calx*caly*cblx*cbly)
+               - cbcx*sbcy*((saly*salz + caly*calz*salx)*(cbly*sblz - cblz*sblx*sbly)
+               + (calz*saly - caly*salx*salz)*(cbly*cblz + sblx*sbly*sblz) - calx*caly*cblx*sbly);
+  transformMapped[1] = atan2(srycrx / cos(transformMapped[0]), 
+                             crycrx / cos(transformMapped[0]));
   
-  float srzcrx = sbcx*(cblx*cbly*(calz*saly - caly*salx*salz) 
-               - cblx*sbly*(caly*calz + salx*saly*salz) + calx*salz*sblx) 
-               - cbcx*cbcz*((caly*calz + salx*saly*salz)*(cbly*sblz - cblz*sblx*sbly) 
-               + (calz*saly - caly*salx*salz)*(sbly*sblz + cbly*cblz*sblx) 
-               - calx*cblx*cblz*salz) + cbcx*sbcz*((caly*calz + salx*saly*salz)*(cbly*cblz 
-               + sblx*sbly*sblz) + (calz*saly - caly*salx*salz)*(cblz*sbly - cbly*sblx*sblz) 
-               + calx*cblx*salz*sblz);
-  float crzcrx = sbcx*(cblx*sbly*(caly*salz - calz*salx*saly) 
-               - cblx*cbly*(saly*salz + caly*calz*salx) + calx*calz*sblx) 
-               + cbcx*cbcz*((saly*salz + caly*calz*salx)*(sbly*sblz + cbly*cblz*sblx) 
-               + (caly*salz - calz*salx*saly)*(cbly*sblz - cblz*sblx*sbly) 
-               + calx*calz*cblx*cblz) - cbcx*sbcz*((saly*salz + caly*calz*salx)*(cblz*sbly 
-               - cbly*sblx*sblz) + (caly*salz - calz*salx*saly)*(cbly*cblz + sblx*sbly*sblz) 
-               - calx*calz*cblx*sblz);
-  transformMapped[2] = atan2(srzcrx / cos(transformMapped[0]), crzcrx / cos(transformMapped[0]));
+  float srzcrx = (cbcz*sbcy - cbcy*sbcx*sbcz)*(calx*salz*(cblz*sbly - cbly*sblx*sblz)
+               - calx*calz*(sbly*sblz + cbly*cblz*sblx) + cblx*cbly*salx)
+               - (cbcy*cbcz + sbcx*sbcy*sbcz)*(calx*calz*(cbly*sblz - cblz*sblx*sbly)
+               - calx*salz*(cbly*cblz + sblx*sbly*sblz) + cblx*salx*sbly)
+               + cbcx*sbcz*(salx*sblx + calx*cblx*salz*sblz + calx*calz*cblx*cblz);
+  float crzcrx = (cbcy*sbcz - cbcz*sbcx*sbcy)*(calx*calz*(cbly*sblz - cblz*sblx*sbly)
+               - calx*salz*(cbly*cblz + sblx*sbly*sblz) + cblx*salx*sbly)
+               - (sbcy*sbcz + cbcy*cbcz*sbcx)*(calx*salz*(cblz*sbly - cbly*sblx*sblz)
+               - calx*calz*(sbly*sblz + cbly*cblz*sblx) + cblx*cbly*salx)
+               + cbcx*cbcz*(salx*sblx + calx*cblx*salz*sblz + calx*calz*cblx*cblz);
+  transformMapped[2] = atan2(srzcrx / cos(transformMapped[0]), 
+                             crzcrx / cos(transformMapped[0]));
 
   x1 = cos(transformMapped[2]) * transformIncre[3] - sin(transformMapped[2]) * transformIncre[4];
   y1 = sin(transformMapped[2]) * transformIncre[3] + cos(transformMapped[2]) * transformIncre[4];
