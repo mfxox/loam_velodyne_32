@@ -98,10 +98,11 @@ float imuRollLast = 0, imuPitchLast = 0, imuYawLast = 0;
 float imuShiftFromStartX = 0, imuShiftFromStartY = 0, imuShiftFromStartZ = 0;
 float imuVeloFromStartX = 0, imuVeloFromStartY = 0, imuVeloFromStartZ = 0;
 
+//pi po input/output point cloud, xyzi type
 void TransformToStart(PointType const * const pi, PointType * const po)
 {
   float s = 10 * (pi->intensity - int(pi->intensity));
-
+  //rx rotation, tx translation
   float rx = s * transform[0];
   float ry = s * transform[1];
   float rz = s * transform[2];

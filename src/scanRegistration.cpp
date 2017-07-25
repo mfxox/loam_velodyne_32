@@ -221,6 +221,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   std::vector<int> scanStartInd(N_SCANS, 0);
   std::vector<int> scanEndInd(N_SCANS, 0);
   
+  //the timestamp of this point cloud
   double timeScanCur = laserCloudMsg->header.stamp.toSec();
   pcl::PointCloud<pcl::PointXYZ> laserCloudIn;
   pcl::fromROSMsg(*laserCloudMsg, laserCloudIn);
@@ -236,29 +237,44 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   } else if (endOri - startOri < M_PI) {
     endOri += 2 * M_PI;
   }
+//angle range of scanning: usually startOri (0), endOri(aprro. 6.28/2pi)
+
   bool halfPassed = false;
   int count = cloudSize;
   PointType point;
+
+//divide the point cloud into separate pcd accoring to scan-lines and add scanid/reltime info to intensity
   std::vector<pcl::PointCloud<PointType> > laserCloudScans(N_SCANS);
   for (int i = 0; i < cloudSize; i++) {
+    //swap the x,y,z axis
     point.x = laserCloudIn.points[i].y;
     point.y = laserCloudIn.points[i].z;
     point.z = laserCloudIn.points[i].x;
 
+    //inclination angle
     float angle = atan(point.y / sqrt(point.x * point.x + point.z * point.z)) * 180 / M_PI;
     int scanID;
-    int roundedAngle = int(angle + (angle<0.0?-0.5:+0.5)); 
+    //round-off
+    roundedAngle=angle
+    // int roundedAngle = int(angle + (angle<0.0?-0.5:+0.5)); 
+    //scanline_id vs inclination angle: vlp 16 +15~-15/2deg res:
+    //hdl-32e +10.67 ~ -30.67 1.33deg res
+    //vlp16 http://velodynelidar.com/docs/manuals/63-9243%20Rev%20B%20User%20Manual%20and%20Programming%20Guide,VLP-16.pdf
+    // for vlp 16,  the scanline_id and  inclination angle has the following relationship
+    roundedAngle += 10
     if (roundedAngle > 0){
-      scanID = roundedAngle;
+      scanID = 2*int((1.333333/2+roundedAngle)/1.3333)-1;
     }
     else {
-      scanID = roundedAngle + (N_SCANS - 1);
+      scanID = 2*int(16+ele/1.333333);
     }
+    //remove points whose scanid cannot be judged (skip to next round for loop)
     if (scanID > (N_SCANS - 1) || scanID < 0 ){
       count--;
       continue;
     }
 
+    //azimuth angle : convert to [0,2pi]
     float ori = -atan2(point.x, point.z);
     if (!halfPassed) {
       if (ori < startOri - M_PI / 2) {
@@ -280,7 +296,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       } 
     }
 
+//relative time, how long has passed since the starting scan
     float relTime = (ori - startOri) / (endOri - startOri);
+//intensity includes the scanID and the relative time of the current point
     point.intensity = scanID + scanPeriod * relTime;
 
     if (imuPointerLast >= 0) {
@@ -349,6 +367,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     }
     laserCloudScans[scanID].push_back(point);
   }
+  //divide the point cloud into separate pcd accoring to scan-lines and add scanid/reltime info to intensity
+
+
   cloudSize = count;
 
   pcl::PointCloud<PointType>::Ptr laserCloud(new pcl::PointCloud<PointType>());
@@ -457,6 +478,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   pcl::PointCloud<PointType> surfPointsFlat;
   pcl::PointCloud<PointType> surfPointsLessFlat;
 
+//calculate curvature of each point and sort
   for (int i = 0; i < N_SCANS; i++) {
     pcl::PointCloud<PointType>::Ptr surfPointsLessFlatScan(new pcl::PointCloud<PointType>);
     for (int j = 0; j < 6; j++) {
@@ -473,6 +495,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         }
       }
 
+ //sharp/less sharp corner points
       int largestPickedNum = 0;
       for (int k = ep; k >= sp; k--) {
         int ind = cloudSortInd[k];
@@ -521,6 +544,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         }
       }
 
+//surf points flat
       int smallestPickedNum = 0;
       for (int k = sp; k <= ep; k++) {
         int ind = cloudSortInd[k];
@@ -572,6 +596,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       }
     }
 
+//downsample
     pcl::PointCloud<PointType> surfPointsLessFlatScanDS;
     pcl::VoxelGrid<PointType> downSizeFilter;
     downSizeFilter.setInputCloud(surfPointsLessFlatScan);
