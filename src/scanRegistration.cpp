@@ -58,12 +58,12 @@ const int systemDelay = 20;
 int systemInitCount = 0;
 bool systemInited = false;
 
-const int N_SCANS = 16;
+const int N_SCANS = 32;
 
-float cloudCurvature[40000];
-int cloudSortInd[40000];
-int cloudNeighborPicked[40000];
-int cloudLabel[40000];
+float cloudCurvature[90000];
+int cloudSortInd[90000];
+int cloudNeighborPicked[90000];
+int cloudLabel[90000];
 
 int imuPointerFront = 0;
 int imuPointerLast = -1;
@@ -229,9 +229,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   pcl::removeNaNFromPointCloud(laserCloudIn, laserCloudIn, indices);
   int cloudSize = laserCloudIn.points.size();
   float startOri = -atan2(laserCloudIn.points[0].y, laserCloudIn.points[0].x);
-  float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y,
-                        laserCloudIn.points[cloudSize - 1].x) + 2 * M_PI;
-
+  // float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y,
+  //                       laserCloudIn.points[cloudSize - 1].x) + 2 * M_PI;
+  float endOri=2 * M_PI;
   if (endOri - startOri > 3 * M_PI) {
     endOri -= 2 * M_PI;
   } else if (endOri - startOri < M_PI) {
@@ -255,13 +255,13 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     float angle = atan(point.y / sqrt(point.x * point.x + point.z * point.z)) * 180 / M_PI;
     int scanID;
     //round-off
-    roundedAngle=angle
+    int roundedAngle=angle;
     // int roundedAngle = int(angle + (angle<0.0?-0.5:+0.5)); 
     //scanline_id vs inclination angle: vlp 16 +15~-15/2deg res:
     //hdl-32e +10.67 ~ -30.67 1.33deg res
     //vlp16 http://velodynelidar.com/docs/manuals/63-9243%20Rev%20B%20User%20Manual%20and%20Programming%20Guide,VLP-16.pdf
     // for vlp 16,  the scanline_id and  inclination angle has the following relationship
-    roundedAngle += 10
+    roundedAngle += 10;
     if (roundedAngle > 0){
       scanID = 2*int((1.333333/2+roundedAngle)/1.3333)-1;
     }
@@ -273,6 +273,13 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       count--;
       continue;
     }
+
+    float dis=sqrt(point.x * point.x + point.y * point.y+point.z * point.z);
+    if(dis > 50){
+      count--;
+      continue;
+    }
+
 
     //azimuth angle : convert to [0,2pi]
     float ori = -atan2(point.x, point.z);
@@ -401,6 +408,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     cloudNeighborPicked[i] = 0;
     cloudLabel[i] = 0;
 
+//judge to find whether the current point is still the same scanline id with the previous one
     if (int(laserCloud->points[i].intensity) != scanCount) {
       scanCount = int(laserCloud->points[i].intensity);
 
