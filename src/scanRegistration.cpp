@@ -266,7 +266,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       scanID = 2*int((1.333333/2+roundedAngle)/1.3333)-1;
     }
     else {
-      scanID = 2*int(16+ele/1.333333);
+      scanID = 2*int(16+roundedAngle/1.333333);
     }
     //remove points whose scanid cannot be judged (skip to next round for loop)
     if (scanID > (N_SCANS - 1) || scanID < 0 ){
