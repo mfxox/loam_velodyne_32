@@ -274,11 +274,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       continue;
     }
 
-    float dis=sqrt(point.x * point.x + point.y * point.y+point.z * point.z);
-    if(dis > 50){
-      count--;
-      continue;
-    }
+    // float dis=sqrt(point.x * point.x + point.y * point.y+point.z * point.z);
+    // if(dis > 50){
+    //   count--;
+    //   continue;
+    // }
 
 
     //azimuth angle : convert to [0,2pi]
